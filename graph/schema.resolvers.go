@@ -6,42 +6,86 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/yukebrillianth/golang-graphql/go-gql/graph/generated"
 	"github.com/yukebrillianth/golang-graphql/go-gql/graph/model"
+	"github.com/yukebrillianth/golang-graphql/go-gql/internal/links"
+	"github.com/yukebrillianth/golang-graphql/go-gql/internal/users"
+	"github.com/yukebrillianth/golang-graphql/go-gql/internal/auth"
+	"github.com/yukebrillianth/golang-graphql/go-gql/pkg/jwt"
 )
 
 func (r *mutationResolver) CreateLink(ctx context.Context, input model.NewLink) (*model.Link, error) {
-	var link model.Link
-	var user model.User
-	link.Address = input.Address
+	// 1
+	user := auth.ForContext(ctx)
+	if user == nil {
+		return &model.Link{}, fmt.Errorf("access denied")
+	}
+	var link links.Link
 	link.Title = input.Title
-	user.Name = "test"
-	link.User = &user
-	return &link, nil
+	link.Address = input.Address
+	link.User = user
+	linkId := link.Save()
+	grahpqlUser := &model.User{
+		ID:   user.ID,
+		Name: user.Username,
+	}
+	return &model.Link{ID: strconv.FormatInt(linkId, 10), Title: link.Title, Address: link.Address, User: grahpqlUser}, nil
 }
 
 func (r *mutationResolver) CreateUser(ctx context.Context, input model.NewUser) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	var user users.User
+	user.Username = input.Username
+	user.Password = input.Password
+	user.Create()
+	token, err := jwt.GenerateToken(user.Username)
+	if err != nil{
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *mutationResolver) Login(ctx context.Context, input model.Login) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	var user users.User
+	user.Username = input.Username
+	user.Password = input.Password
+	correct := user.Authenticate()
+	if !correct {
+		// 1
+		return "", &users.WrongUsernameOrPasswordError{}
+	}
+	token, err := jwt.GenerateToken(user.Username)
+	if err != nil{
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *mutationResolver) RefreshToken(ctx context.Context, input model.RefreshTokenInput) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+	username, err := jwt.ParseToken(input.Token)
+	if err != nil {
+		return "", fmt.Errorf("access denied")
+	}
+	token, err := jwt.GenerateToken(username)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (r *queryResolver) Links(ctx context.Context) ([]*model.Link, error) {
-	var links []*model.Link
-	dummyLink := model.Link {
-		Title: "Our dummy link",
-		Address: "https://address.org",
-		User: &model.User{Name: "admin"},
+	var resultLinks []*model.Link
+	var dbLinks []links.Link
+	dbLinks = links.GetAll()
+	for _, link := range dbLinks{
+		grahpqlUser := &model.User{
+			ID:   link.User.ID,
+			Name: link.User.Username,
+		}
+		resultLinks = append(resultLinks, &model.Link{ID: link.ID, Title: link.Title, Address: link.Address, User: grahpqlUser})
 	}
-		links = append(links, &dummyLink)
-		return links, nil
+	return resultLinks, nil
 }
 
 // Mutation returns generated.MutationResolver implementation.
@@ -52,16 +96,3 @@ func (r *Resolver) Query() generated.QueryResolver { return &queryResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-// func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewLink) (*model.Todo, error) {
-// 	panic(fmt.Errorf("not implemented"))
-// }
-// func (r *queryResolver) Todos(ctx context.Context) ([]*model.Link, error) {
-// 	panic(fmt.Errorf("not implemented"))
-// }

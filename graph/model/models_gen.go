@@ -3,10 +3,10 @@
 package model
 
 type Link struct {
-	ID      *string `json:"id"`
-	Title   string  `json:"title"`
-	Address string  `json:"address"`
-	User    *User   `json:"user"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Address string `json:"address"`
+	User    *User  `json:"user"`
 }
 
 type Login struct {
